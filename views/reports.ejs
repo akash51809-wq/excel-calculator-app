@@ -1,0 +1,194 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Uploaded Excel Reports - Daybook</title>
+    <!-- Bootstrap CSS CDN -->
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <!-- FontAwesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        .sidebar { min-height: 100vh; background: #343a40; color: #fff; }
+        .sidebar a { color: #cfd2d6; text-decoration: none; padding: 12px 20px; display: block; transition: 0.3s; }
+        .sidebar a:hover, .sidebar a.active { background: #0d6efd; color: #fff; border-radius: 5px; }
+        .card { border: none; border-shadow: 0 4px 6px rgba(0,0,0,0.1); }
+        .table-responsive { max-height: 70vh; }
+    </style>
+</head>
+<body>
+
+    <div class="container-fluid">
+        <div class="row">
+            <!-- Sidebar Navigation -->
+            <div class="col-md-3 col-lg-2 d-md-block sidebar collapse p-3">
+                <h4 class="text-center text-white py-3"><i class="fa-solid fa-calculator"></i> Daybook App</h4>
+                <hr class="text-secondary">
+                <ul class="nav flex-column">
+                    <li class="nav-item mb-2"><a href="/dashboard"><i class="fa-solid fa-chart-line me-2"></i> Dashboard</a></li>
+                    <li class="nav-item mb-2"><a href="/upload"><i class="fa-solid fa-file-arrow-up me-2"></i> Upload Excel</a></li>
+                    <li class="nav-item mb-2"><a href="/reports" class="active"><i class="fa-solid fa-table-list me-2"></i> Reports</a></li>
+                    <li class="nav-item mb-2"><a href="/settings"><i class="fa-solid fa-gear me-2"></i> Settings</a></li>
+                    <li class="nav-item mt-4"><a href="/api/logout" class="text-danger"><i class="fa-solid fa-right-from-bracket me-2"></i> Logout</a></li>
+                </ul>
+            </div>
+
+            <!-- Main Content -->
+            <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
+                <div class="d-flex justify-content-between flex-wrap flex-md-nowrap align-items-center pt-3 pb-2 mb-3 border-bottom">
+                    <h1 class="h2"><i class="fa-solid fa-folder-open text-primary"></i> Uploaded Excel Reports History</h1>
+                    <span class="text-muted" id="currentDate"></span>
+                </div>
+
+                <!-- Reports Table Card -->
+                <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                        <div class="table-responsive">
+                            <table class="table table-hover align-middle">
+                                <thead class="table-dark">
+                                    <tr>
+                                        <th>#</th>
+                                        <th>Date</th>
+                                        <th>File Name</th>
+                                        <th>Total Rows</th>
+                                        <th>Total Purchase</th>
+                                        <th>Total Sale</th>
+                                        <th>Net Diff</th>
+                                        <th class="text-center">Actions</th>
+                                    </tr>
+                                </thead>
+                                <tbody id="reportsTableBody">
+                                    <tr>
+                                        <td colspan="8" class="text-center py-4">Loading reports...</td>
+                                    </tr>
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
+                </div>
+            </main>
+        </div>
+    </div>
+
+    <!-- Excel View Modal -->
+    <div class="modal fade" id="excelViewModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog modal-xl modal-dialog-scrollable">
+            <div class="modal-content">
+                <div class="modal-header bg-primary text-white">
+                    <h5 class="modal-title"><i class="fa-solid fa-file-excel me-2"></i> <span id="modalFileTitle">Excel Data Viewer</span></h5>
+                    <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <div class="table-responsive">
+                        <table class="table table-bordered table-striped table-sm" id="modalExcelTable">
+                            <!-- Dynamic Excel Rows will load here -->
+                        </table>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-success" id="modalDownloadBtn"><i class="fa-solid fa-download me-1"></i> Download Excel</button>
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Bootstrap JS & SheetJS for Client-side export if needed -->
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/xlsx/0.18.5/xlsx.full.min.js"></script>
+
+    <script>
+        let allReportsData = [];
+
+        async function fetchReports() {
+            try {
+                const res = await fetch('/api/excel/reports');
+                const result = await res.json();
+                if (result.success) {
+                    allReportsData = result.reports;
+                    renderTable(allReportsData);
+                }
+            } catch (err) {
+                console.error("Error fetching reports:", err);
+            }
+        }
+
+        function renderTable(reports) {
+            const tbody = document.getElementById('reportsTableBody');
+            if (reports.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">No uploaded excel records found.</td></tr>`;
+                return;
+            }
+
+            tbody.innerHTML = reports.map((rep, index) => `
+                <tr>
+                    <td>${index + 1}</td>
+                    <td><strong><i class="fa-regular fa-calendar-days text-primary me-1"></i> ${rep.recordDate}</strong></td>
+                    <td>${rep.fileName || 'N/A'}</td>
+                    <td><span class="badge bg-secondary">${rep.totalRows || 0} Rows</span></td>
+                    <td class="text-success fw-bold">₹${(rep.totalPurchase || 0).toLocaleString('en-IN')}</td>
+                    <td class="text-danger fw-bold">₹${(rep.totalSale || 0).toLocaleString('en-IN')}</td>
+                    <td class="fw-bold ${rep.purchaseSaleDiff >= 0 ? 'text-dark' : 'text-danger'}">₹${(rep.purchaseSaleDiff || 0).toLocaleString('en-IN')}</td>
+                    <td class="text-center">
+                        <button class="btn btn-sm btn-outline-primary me-1" onclick="openExcelModal('${rep._id}')" title="View Excel Data">
+                            <i class="fa-solid fa-eye"></i> Show
+                        </button>
+                        <button class="btn btn-sm btn-outline-success" onclick="downloadExcelData('${rep._id}')" title="Download Excel">
+                            <i class="fa-solid fa-download"></i> Download
+                        </button>
+                    </td>
+                </tr>
+            `).join('');
+        }
+
+        function openExcelModal(id) {
+            const record = allReportsData.find(r => r._id === id);
+            if (!record || !record.rawExcelData || record.rawExcelData.length === 0) {
+                alert("Raw data not available for this record.");
+                return;
+            }
+
+            document.getElementById('modalFileTitle').innerText = `${record.fileName} (${record.recordDate})`;
+            
+            const rawData = record.rawExcelData;
+            const tableElement = document.getElementById('modalExcelTable');
+
+            if (rawData.length > 0) {
+                const keys = Object.keys(rawData[0]);
+                
+                let theadHTML = `<thead class="table-dark"><tr>` + keys.map(k => `<th>${k}</th>`).join('') + `</tr></thead>`;
+                let tbodyHTML = `<tbody>` + rawData.map(row => {
+                    return `<tr>` + keys.map(k => `<td>${row[k] !== undefined ? row[k] : ''}</td>`).join('') + `</tr>`;
+                }).join('') + `</tbody>`;
+
+                tableElement.innerHTML = theadHTML + tbodyHTML;
+            }
+
+            // Set download action button inside modal
+            document.getElementById('modalDownloadBtn').onclick = () => downloadExcelData(id);
+
+            const modal = new bootstrap.Modal(document.getElementById('excelViewModal'));
+            modal.show();
+        }
+
+        function downloadExcelData(id) {
+            const record = allReportsData.find(r => r._id === id);
+            if (!record || !record.rawExcelData) {
+                alert("No data available to download.");
+                return;
+            }
+
+            // Convert raw JSON data back to worksheet using SheetJS
+            const worksheet = XLSX.utils.json_to_sheet(record.rawExcelData);
+            const workbook = XLSX.utils.book_new();
+            XLSX.utils.book_append_sheet(workbook, worksheet, "DailyReport");
+
+            // Trigger download
+            XLSX.writeFile(workbook, `${record.recordDate}_${record.fileName || 'report.xlsx'}`);
+        }
+
+        document.addEventListener('DOMContentLoaded', fetchReports);
+    </script>
+</body>
+</html>

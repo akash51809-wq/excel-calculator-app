@@ -10,6 +10,12 @@ const cors = require('cors');
 const app = express();
 const PORT = process.env.PORT || 10000;
 
+app.set('trust proxy', 1);
+
+// ================= EJS VIEW ENGINE SETUP ================= //
+app.set('view engine', 'ejs');
+app.set('views', path.join(__dirname, 'views'));
+
 // ================= MONGODB CONNECTION ================= //
 const MONGO_URI = process.env.MONGODB_URI || 'mongodb+srv://akash51809_db_user:D74ZBED7uJ4R3FTz@cluster0.iwznzgx.mongodb.net/daybookDB?retryWrites=true&w=majority';
 
@@ -67,7 +73,11 @@ app.use(session({
     secret: 'daybook_secret_key_987654321',
     resave: false,
     saveUninitialized: false,
-    cookie: { maxAge: 24 * 60 * 60 * 1000 }
+    cookie: { 
+        maxAge: 24 * 60 * 60 * 1000,
+        secure: process.env.NODE_ENV === 'production',
+        sameSite: 'lax'
+    }
 }));
 
 function requireAuth(req, res, next) {
@@ -77,19 +87,19 @@ function requireAuth(req, res, next) {
     return res.redirect('/login');
 }
 
-// Anti-cache header for HTML responses
 app.use((req, res, next) => {
-    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    if (req.method === 'GET' && !req.path.startsWith('/api/') && !req.path.includes('.')) {
+        res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    }
     next();
 });
 
-// Serve static assets
 app.use(express.static(path.join(__dirname, 'public')));
 
 // ================= AUTH ROUTES ================= //
 app.get('/login', (req, res) => {
     if (req.session && req.session.isAuthenticated) return res.redirect('/dashboard');
-    res.sendFile(path.join(__dirname, 'public', 'login.html'));
+    res.render('login');
 });
 
 app.post('/api/login', (req, res) => {
@@ -106,26 +116,31 @@ app.get('/api/logout', (req, res) => {
     req.session.destroy(() => res.redirect('/login'));
 });
 
-// ================= PAGE ROUTES ================= //
+// ================= EXPLICIT VIEW ROUTES (EJS) ================= //
 app.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
 
 app.get('/dashboard', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'dashboard.html'));
+    res.render('dashboard');
 });
 
 app.get('/upload', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'upload.html'));
+    res.render('upload');
 });
 
-app.get('/reports', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'reports.html'));
+// Reports Submenu Routes
+app.get('/reports/upload-report', requireAuth, (req, res) => {
+    res.render('upload-report');
+});
+
+app.get('/reports/dealer-list', requireAuth, (req, res) => {
+    res.render('dealer-list');
 });
 
 app.get('/settings', requireAuth, (req, res) => {
-    res.sendFile(path.join(__dirname, 'public', 'settings.html'));
+    res.render('settings');
 });
 
-// ================= APIs ================= //
+// ================= API ENDPOINTS ================= //
 app.get('/api/dealers', requireAuth, async (req, res) => {
     const dealers = await Dealer.find();
     res.json(dealers);
@@ -229,6 +244,46 @@ app.post('/api/excel/upload', requireAuth, upload.single('file'), async (req, re
 app.get('/api/excel/reports', requireAuth, async (req, res) => {
     const records = await DailyRecord.find().sort({ recordDate: -1 });
     res.json({ success: true, reports: records });
+});
+
+app.get('/api/excel/dealers-list', requireAuth, async (req, res) => {
+    try {
+        const records = await DailyRecord.find();
+        let dealerMap = {};
+
+        records.forEach(record => {
+            if (record.rawExcelData && Array.isArray(record.rawExcelData)) {
+                record.rawExcelData.forEach(row => {
+                    const dealerCol = row['Dealer Name'] || row['dealer name'] || row.Dealer || row['dealer name/remark'] || row['Dealer Name/Remark'] || row.Remark || row.remark || 'Unassigned';
+                    const retailerNo = row['RetailerNo'] || row['retailerno'] || row['Retailer No'] || row['retailer no'] || row['Mobile'] || row['mobile'] || '';
+
+                    let cleanDealer = String(dealerCol).trim();
+                    if (!cleanDealer) cleanDealer = 'Unassigned';
+
+                    if (!dealerMap[cleanDealer]) {
+                        dealerMap[cleanDealer] = new Set();
+                    }
+
+                    if (retailerNo) {
+                        dealerMap[cleanDealer].add(String(retailerNo).trim());
+                    }
+                });
+            }
+        });
+
+        const formattedDealers = Object.keys(dealerMap).map((dealerName, index) => {
+            return {
+                id: index + 1,
+                dealerName: dealerName,
+                lapuNumbers: Array.from(dealerMap[dealerName])
+            };
+        });
+
+        res.json({ success: true, dealers: formattedDealers });
+    } catch (err) {
+        console.error("Error fetching dealer list:", err);
+        res.status(500).json({ success: false, error: 'Failed to extract dealers' });
+    }
 });
 
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
