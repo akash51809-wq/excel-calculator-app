@@ -2,8 +2,9 @@
   "name": "excel-calculator-app",
   "version": "1.0.0",
   "description": "for personal use",
-  "main": "index.js",
+  "main": "server.js",
   "scripts": {
+    "start": "node server.js",
     "test": "echo \"Error: no test specified\" && exit 1"
   },
   "repository": {
@@ -19,6 +20,7 @@
   },
   "homepage": "https://github.com/akash51809-wq/excel-calculator-app#readme",
   "dependencies": {
+    "cors": "^2.8.5",
     "dotenv": "^17.4.2",
     "express": "^5.2.1",
     "express-session": "^1.19.0",
