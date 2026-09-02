@@ -1,11 +1,13 @@
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
-const xlsx = require('xlsx');
 const path = require('path');
 const fs = require('fs');
 const mongoose = require('mongoose');
 const cors = require('cors');
+
+// Import Models & Routes
+const excelRoutes = require('./routes/excelRoutes');
 
 const app = express();
 const PORT = process.env.PORT || 10000;
@@ -17,7 +19,7 @@ mongoose.connect(MONGO_URI)
     .then(() => console.log('✅ Connected to MongoDB Atlas Successfully!'))
     .catch(err => console.error('❌ MongoDB Connection Error:', err));
 
-// ================= SCHEMAS & MODELS ================= //
+// Database Schemas & Models
 const dealerSchema = new mongoose.Schema({
     dealerName: { type: String, required: true },
     remarkKeyword: { type: String, required: true },
@@ -47,6 +49,7 @@ const dailyRecordSchema = new mongoose.Schema({
 });
 const DailyRecord = mongoose.model('DailyRecord', dailyRecordSchema);
 
+// Upload Directory Setup
 const uploadDir = path.join(__dirname, 'uploads');
 if (!fs.existsSync(uploadDir)) {
     fs.mkdirSync(uploadDir);
@@ -63,6 +66,7 @@ app.use(cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
+// Express Session Configuration
 app.use(session({
     secret: 'daybook_secret_key_987654321',
     resave: false,
@@ -70,6 +74,14 @@ app.use(session({
     cookie: { maxAge: 24 * 60 * 60 * 1000 }
 }));
 
+// Anti-Cache & Public Folder Configuration
+app.use((req, res, next) => {
+    res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, private');
+    next();
+});
+app.use(express.static(path.join(__dirname, 'public')));
+
+// Authentication Middleware
 function requireAuth(req, res, next) {
     if (req.session && req.session.isAuthenticated) {
         return next();
@@ -77,9 +89,7 @@ function requireAuth(req, res, next) {
     return res.redirect('/login');
 }
 
-app.use('/assets', express.static(path.join(__dirname, 'public')));
-
-// ================= AUTH ROUTES ================= //
+// ================= AUTHENTICATION ROUTES ================= //
 app.get('/login', (req, res) => {
     if (req.session && req.session.isAuthenticated) return res.redirect('/dashboard');
     res.sendFile(path.join(__dirname, 'public', 'login.html'));
@@ -99,14 +109,7 @@ app.get('/api/logout', (req, res) => {
     req.session.destroy(() => res.redirect('/login'));
 });
 
-// ================= PAGES ================= //
-app.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
-app.get('/dashboard', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'dashboard.html')));
-app.get('/upload', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'upload.html')));
-app.get('/reports', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'reports.html')));
-app.get('/settings', requireAuth, (req, res) => res.sendFile(path.join(__dirname, 'public', 'settings.html')));
-
-// ================= APIs ================= //
+// ================= API ENDPOINTS ================= //
 app.get('/api/dealers', requireAuth, async (req, res) => {
     const dealers = await Dealer.find();
     res.json(dealers);
@@ -134,82 +137,14 @@ app.post('/api/settings/mode', requireAuth, async (req, res) => {
     res.json({ success: true, mode });
 });
 
-app.post('/api/excel/upload', requireAuth, upload.single('file'), async (req, res) => {
-    try {
-        if (!req.file) return res.status(400).json({ success: false, error: 'No Excel file' });
-
-        const recordDate = req.body.recordDate || new Date().toISOString().split('T')[0];
-        const currentOpening = parseFloat(req.body.openingBalance) || 0;
-
-        const activeMode = await Settings.findOne({ key: 'fetchMode' });
-        const isRemarkMode = activeMode && activeMode.value === 'remark';
-
-        const workbook = xlsx.readFile(req.file.path);
-        const sheetData = xlsx.utils.sheet_to_json(workbook.Sheets[workbook.SheetNames[0]]);
-        const registeredDealers = await Dealer.find();
-
-        let dayTotalPurchase = 0;
-        let dayTotalSale = 0;
-        let dealerSummary = {};
-
-        sheetData.forEach(row => {
-            const remarkCol = row['dealer name/remark'] || row['Dealer Name/Remark'] || row.Remark || row.remark || '';
-            const dealerCol = row['Dealer Name'] || row['dealer name'] || row.Dealer || '';
-
-            const cellValue = isRemarkMode ? String(remarkCol).toLowerCase() : String(dealerCol).toLowerCase();
-            const typeStr = String(row.Type || row.type || '').toLowerCase();
-            const amount = parseFloat(row.Amount || row.amount || 0) || 0;
-
-            let matchedDealer = "Unassigned / General";
-            registeredDealers.forEach(d => {
-                const searchKeyword = isRemarkMode ? d.remarkKeyword.toLowerCase() : d.dealerName.toLowerCase();
-                if (cellValue.includes(searchKeyword)) matchedDealer = d.dealerName;
-            });
-
-            if (!dealerSummary[matchedDealer]) dealerSummary[matchedDealer] = { purchase: 0, sale: 0 };
-
-            if (typeStr.includes('credit') || typeStr.includes('purchase') || amount > 0) {
-                dayTotalPurchase += Math.abs(amount);
-                dealerSummary[matchedDealer].purchase += Math.abs(amount);
-            } else {
-                dayTotalSale += Math.abs(amount);
-                dealerSummary[matchedDealer].sale += Math.abs(amount);
-            }
-        });
-
-        const prevDateObj = new Date(recordDate);
-        prevDateObj.setDate(prevDateObj.getDate() - 1);
-        const prevRecord = await DailyRecord.findOne({ recordDate: prevDateObj.toISOString().split('T')[0] });
-
-        let isOpeningMatched = true;
-        if (prevRecord && prevRecord.closingBalance !== undefined && prevRecord.closingBalance !== currentOpening) {
-            isOpeningMatched = false;
-        }
-
-        const calculatedDiff = dayTotalPurchase - dayTotalSale;
-        const calculatedClosing = currentOpening + calculatedDiff;
-
-        const updatedRecord = await DailyRecord.findOneAndUpdate(
-            { recordDate: recordDate },
-            {
-                recordDate, fileName: req.file.originalname, totalRows: sheetData.length,
-                totalPurchase: dayTotalPurchase, totalSale: dayTotalSale, purchaseSaleDiff: calculatedDiff,
-                openingBalance: currentOpening, closingBalance: calculatedClosing,
-                previousClosingMatch: isOpeningMatched, dealerBreakdown: dealerSummary, rawExcelData: sheetData
-            },
-            { upsert: true, new: true }
-        );
-
-        fs.unlink(req.file.path, () => {});
-        res.json({ success: true, data: updatedRecord });
-    } catch (error) {
-        res.status(500).json({ success: false, error: 'Excel processing error' });
-    }
-});
-
 app.get('/api/excel/reports', requireAuth, async (req, res) => {
     const records = await DailyRecord.find().sort({ recordDate: -1 });
     res.json({ success: true, reports: records });
 });
 
+// ================= PAGE ROUTING VIA CONTROLLER ================= //
+app.get('/', requireAuth, (req, res) => res.redirect('/dashboard'));
+app.use('/', requireAuth, excelRoutes);
+
+// Server Init
 app.listen(PORT, () => console.log(`🚀 Server running on http://localhost:${PORT}`));
