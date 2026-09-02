@@ -1,0 +1,188 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Dealer Settings - Excel Calculator</title>
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+  <style>
+    body { background-color: #f8f9fa; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+    .card { border: none; border-radius: 12px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .table-container { background: #fff; border-radius: 12px; padding: 20px; box-shadow: 0 4px 12px rgba(0,0,0,0.05); }
+    .form-switch .form-check-input { width: 3em; height: 1.5em; cursor: pointer; }
+  </style>
+</head>
+<body>
+  <div class="container py-4">
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <h2>⚙️ Dealer Settings</h2>
+      <a href="/upload" class="btn btn-outline-primary">Go to Upload Excel</a>
+    </div>
+
+    <!-- Switch Button for Active Fetch Mode -->
+    <div class="card mb-4 bg-white p-3">
+      <div class="d-flex align-items-center justify-content-between">
+        <div>
+          <h5 class="mb-1">📊 Select Table Mode for Excel Fetching</h5>
+          <small class="text-muted">Choose which column mode to fetch data from Excel file upon upload.</small>
+        </div>
+        <div class="form-check form-switch d-flex align-items-center gap-2">
+          <label class="form-check-label fw-bold" id="modeLabel" for="fetchModeToggle">Dealer Name Mode</label>
+          <input class="form-check-input ms-2" type="checkbox" id="fetchModeToggle" onchange="toggleFetchMode(this)">
+        </div>
+      </div>
+    </div>
+
+    <!-- Form to Add Dealer -->
+    <div class="card mb-4">
+      <div class="card-body">
+        <h5 class="card-title mb-3">Add New Dealer / Remark Keyword</h5>
+        <form id="dealerForm">
+          <div class="row g-3">
+            <div class="col-md-5">
+              <label class="form-label">Dealer Name</label>
+              <input type="text" id="dealerName" class="form-control" placeholder="e.g. Ramesh Telecom" required>
+            </div>
+            <div class="col-md-5">
+              <label class="form-label">dealer name/remark Keyword</label>
+              <input type="text" id="remarkKeyword" class="form-control" placeholder="e.g. RAMESH" required>
+            </div>
+            <div class="col-md-2 d-flex align-items-end">
+              <button type="submit" class="btn btn-success w-100">Add Dealer</button>
+            </div>
+          </div>
+        </form>
+      </div>
+    </div>
+
+    <!-- List of Dealers -->
+    <div class="table-container">
+      <h5 class="mb-3">Configured Dealers & Remarks List</h5>
+      <table class="table table-hover align-middle">
+        <thead class="table-light">
+          <tr>
+            <th>#</th>
+            <th>Dealer Name</th>
+            <th>dealer name/remark Keyword</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="dealerTableBody">
+          <tr>
+            <td colspan="4" class="text-center">Loading dealers...</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <script>
+    let currentFetchMode = 'dealer_name';
+
+    // Fetch existing settings and dealers on load
+    document.addEventListener('DOMContentLoaded', () => {
+      loadFetchMode();
+      loadDealers();
+    });
+
+    async function loadFetchMode() {
+      try {
+        const res = await fetch('/api/settings/mode');
+        const data = await res.json();
+        currentFetchMode = data.mode || 'dealer_name';
+        const toggle = document.getElementById('fetchModeToggle');
+        toggle.checked = (currentFetchMode === 'remark');
+        updateModeText();
+      } catch (err) {
+        console.error("Error loading mode:", err);
+      }
+    }
+
+    function updateModeText() {
+      const label = document.getElementById('modeLabel');
+      const isRemark = document.getElementById('fetchModeToggle').checked;
+      if (isRemark) {
+        label.innerText = "dealer name/remark Mode";
+        label.className = "form-check-label fw-bold text-primary";
+      } else {
+        label.innerText = "Dealer Name Mode";
+        label.className = "form-check-label fw-bold text-success";
+      }
+    }
+
+    async function toggleFetchMode(toggle) {
+      const mode = toggle.checked ? 'remark' : 'dealer_name';
+      updateModeText();
+      try {
+        await fetch('/api/settings/mode', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ mode })
+        });
+      } catch (err) {
+        alert('Failed to update fetch mode');
+      }
+    }
+
+    async function loadDealers() {
+      try {
+        const res = await fetch('/api/dealers');
+        const dealers = await res.json();
+        const tbody = document.getElementById('dealerTableBody');
+        tbody.innerHTML = '';
+        if (dealers.length === 0) {
+          tbody.innerHTML = '<tr><td colspan="4" class="text-center text-muted">No dealers added yet.</td></tr>';
+          return;
+        }
+        dealers.forEach((d, i) => {
+          tbody.innerHTML += `
+            <tr>
+              <td>${i + 1}</td>
+              <td class="fw-bold">${d.dealerName}</td>
+              <td><span class="badge bg-secondary">${d.remarkKeyword}</span></td>
+              <td>
+                <button class="btn btn-sm btn-outline-danger" onclick="deleteDealer('${d._id}')">Delete</button>
+              </td>
+            </tr>
+          `;
+        });
+      } catch (err) {
+        console.error("Error loading dealers:", err);
+      }
+    }
+
+    document.getElementById('dealerForm').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const dealerName = document.getElementById('dealerName').value;
+      const remarkKeyword = document.getElementById('remarkKeyword').value;
+
+      try {
+        const res = await fetch('/api/dealers', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ dealerName, remarkKeyword })
+        });
+        if (res.ok) {
+          document.getElementById('dealerName').value = '';
+          document.getElementById('remarkKeyword').value = '';
+          loadDealers();
+        } else {
+          alert('Error adding dealer');
+        }
+      } catch (err) {
+        alert('Error adding dealer');
+      }
+    });
+
+    async function deleteDealer(id) {
+      if (!confirm('Are you sure you want to delete this dealer?')) return;
+      try {
+        await fetch(`/api/dealers/${id}`, { method: 'DELETE' });
+        loadDealers();
+      } catch (err) {
+        alert('Error deleting dealer');
+      }
+    }
+  </script>
+</body>
+</html>
