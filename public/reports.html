@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Show Upload Excel - Daybook Reports</title>
+    <style>
+        body { background: #111215; color: #fff; font-family: system-ui, sans-serif; margin: 0; padding: 20px; }
+        h2 { border-bottom: 1px solid #333; padding-bottom: 10px; }
+        .card { background: #1c1e24; border-radius: 8px; padding: 15px; margin-top: 15px; overflow-x: auto; }
+        table { width: 100%; border-collapse: collapse; text-align: left; }
+        th, td { padding: 12px; border-bottom: 1px solid #2a2d37; font-size: 14px; }
+        th { background: #252830; color: #aaa; text-transform: uppercase; }
+        .badge-success { color: #10b981; background: rgba(16, 185, 129, 0.1); padding: 4px 8px; border-radius: 4px; }
+        .badge-danger { color: #ef4444; background: rgba(239, 68, 68, 0.1); padding: 4px 8px; border-radius: 4px; }
+    </style>
+</head>
+<body>
+    <h2>Uploaded Excel Reports</h2>
+    <div class="card">
+        <table>
+            <thead>
+                <tr>
+                    <th>Upload Date</th>
+                    <th>File Name</th>
+                    <th>Total Records</th>
+                    <th>Status</th>
+                </tr>
+            </thead>
+            <tbody id="reportTableBody">
+                <tr><td colspan="4">Loading reports...</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <script>
+        async function loadReports() {
+            try {
+                const res = await fetch('/api/excel/reports');
+                const data = await res.json();
+                const tbody = document.getElementById('reportTableBody');
+
+                if (data.success && data.reports.length > 0) {
+                    tbody.innerHTML = data.reports.map(r => `
+                        <tr>
+                            <td>${new Date(r.recordDate).toLocaleDateString()}</td>
+                            <td>${r.fileName}</td>
+                            <td>${r.count} Rows</td>
+                            <td>
+                                ${r.mismatchedCount === 0 
+                                    ? '<span class="badge-success">Matched</span>' 
+                                    : `<span class="badge-danger">${r.mismatchedCount} Mismatched</span>`}
+                            </td>
+                        </tr>
+                    `).join('');
+                } else {
+                    tbody.innerHTML = '<tr><td colspan="4">No reports uploaded yet.</td></tr>';
+                }
+            } catch (err) {
+                console.error(err);
+            }
+        }
+        loadReports();
+    </script>
+</body>
+</html>
