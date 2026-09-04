@@ -1,0 +1,162 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Purchase Report - Daybook App</title>
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <style>
+        body { background-color:#f8f9fa; font-family:'Segoe UI',Tahoma,Geneva,Verdana,sans-serif; }
+        .sidebar { min-height:100vh; background:#343a40; color:#fff; }
+        .sidebar a { color:#cfd2d6; text-decoration:none; padding:12px 20px; display:block; transition:.3s; }
+        .sidebar a:hover,.sidebar a.active { background:#0d6efd; color:#fff; border-radius:5px; }
+        .card { border:none; box-shadow:0 4px 6px rgba(0,0,0,.05); }
+        .table-responsive { max-height:68vh; }
+        .sticky-head th { position:sticky; top:0; z-index:2; }
+    </style>
+</head>
+<body>
+<div class="container-fluid"><div class="row">
+    <div class="col-md-3 col-lg-2 d-md-block sidebar collapse p-3">
+        <h4 class="text-center text-white py-3"><i class="fa-solid fa-calculator"></i> Daybook App</h4>
+        <hr class="text-secondary">
+        <ul class="nav flex-column">
+            <li class="nav-item mb-2"><a href="/dashboard"><i class="fa-solid fa-chart-line me-2"></i> Dashboard</a></li>
+            <li class="nav-item mb-2"><a href="/upload"><i class="fa-solid fa-file-arrow-up me-2"></i> Upload Excel</a></li>
+            <li class="nav-item mb-2">
+                <a href="#reportsSubmenu" data-bs-toggle="collapse" class="d-flex justify-content-between align-items-center active">
+                    <span><i class="fa-solid fa-table-list me-2"></i> Reports</span><i class="fa-solid fa-chevron-down small"></i>
+                </a>
+                <ul class="collapse show list-unstyled ps-3 mt-1" id="reportsSubmenu">
+                    <li class="nav-item mb-1"><a href="/reports/upload-report" class="py-2 small"><i class="fa-solid fa-file-excel me-2"></i> Upload Excel Report</a></li>
+                    <li class="nav-item mb-1"><a href="/reports/dealer-list" class="py-2 small"><i class="fa-solid fa-users me-2"></i> Show Dealer List</a></li>
+                    <li class="nav-item mb-1"><a href="/reports/purchase-report" class="py-2 small active"><i class="fa-solid fa-cart-shopping me-2"></i> Purchase Report</a></li>
+                </ul>
+            </li>
+            <li class="nav-item mb-2"><a href="/settings"><i class="fa-solid fa-gear me-2"></i> Settings</a></li>
+            <li class="nav-item mt-4"><a href="/api/logout" class="text-danger"><i class="fa-solid fa-right-from-bracket me-2"></i> Logout</a></li>
+        </ul>
+    </div>
+
+    <main class="col-md-9 ms-sm-auto col-lg-10 px-md-4 py-4">
+        <div class="d-flex justify-content-between align-items-center pt-3 pb-2 mb-3 border-bottom">
+            <h1 class="h2"><i class="fa-solid fa-cart-shopping text-primary me-2"></i> Purchase Report</h1>
+        </div>
+
+        <div class="card shadow-sm mb-4"><div class="card-body">
+            <div class="row g-3 align-items-end">
+                <div class="col-md-4"><label class="form-label fw-semibold">Date</label><input type="date" id="reportDate" class="form-control"></div>
+                <div class="col-md-3"><button class="btn btn-primary w-100" onclick="generateReport()"><i class="fa-solid fa-filter me-1"></i> Show Report</button></div>
+                <div class="col-md-3"><button class="btn btn-outline-secondary w-100" onclick="showAllDates()"><i class="fa-solid fa-calendar-days me-1"></i> All Dates</button></div>
+            </div>
+            <div class="small text-muted mt-3">Purchase rule: <strong>Purchase × 1.03 = PurchaseDiff</strong>. PurchaseDiff में ±0.10% तक का अंतर ignore किया जाएगा। उदाहरण: ₹9,270.03 / ₹9,265 / ₹9,275 → Purchase ₹9,000.</div>
+        </div></div>
+
+        <div class="row g-3 mb-4">
+            <div class="col-md-4"><div class="card p-3"><div class="text-muted small">REPORT DATE</div><div id="summaryDate" class="fw-bold">All Dates</div></div></div>
+            <div class="col-md-4"><div class="card p-3"><div class="text-muted small">DEALER COUNT</div><div id="dealerCount" class="fw-bold">0</div></div></div>
+            <div class="col-md-4"><div class="card p-3"><div class="text-muted small">TOTAL PURCHASE</div><div id="totalPurchase" class="fw-bold text-success">₹0.00</div></div></div>
+        </div>
+
+        <div class="card shadow-sm"><div class="card-body">
+            <div class="table-responsive">
+                <table class="table table-hover table-bordered align-middle mb-0">
+                    <thead class="table-dark sticky-head"><tr><th>#</th><th>Date</th><th>Dealer Name</th><th>LAPU</th><th>PurchaseDiff</th><th>Purchase</th></tr></thead>
+                    <tbody id="purchaseTableBody"><tr><td colspan="6" class="text-center py-4">Loading...</td></tr></tbody>
+                </table>
+            </div>
+        </div></div>
+    </main>
+</div></div>
+
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/js/bootstrap.bundle.min.js"></script>
+<script>
+let allReports = [];
+let selectedDate = null;
+
+function val(row, names) {
+    for (const name of names) {
+        if (row && row[name] !== undefined && row[name] !== null && String(row[name]).trim() !== '') return row[name];
+    }
+    const keys = row ? Object.keys(row) : [];
+    for (const name of names) {
+        const wanted = name.toLowerCase().replace(/[^a-z0-9]/g, '');
+        const key = keys.find(k => k.toLowerCase().replace(/[^a-z0-9]/g, '') === wanted);
+        if (key && row[key] !== undefined && row[key] !== null && String(row[key]).trim() !== '') return row[key];
+    }
+    return '';
+}
+
+function num(v) {
+    if (typeof v === 'number') return v;
+    return parseFloat(String(v ?? '').replace(/[,₹\s]/g, '')) || 0;
+}
+
+function calculatePurchase(purchaseDiff) {
+    const diff = Math.abs(num(purchaseDiff));
+    if (!diff) return 0;
+    // Expected PurchaseDiff = Purchase + 3% of Purchase = Purchase * 1.03.
+    // Purchase is normally in whole ₹1,000 blocks. ±0.10% of expected PurchaseDiff is ignored.
+    const nearestThousand = Math.round((diff / 1.03) / 1000) * 1000;
+    const expected = nearestThousand * 1.03;
+    const tolerance = expected * 0.001;
+    if (Math.abs(diff - expected) <= tolerance) return nearestThousand;
+    return 0;
+}
+
+function buildRows(dateFilter) {
+    const rows = [];
+    allReports.forEach(report => {
+        if (dateFilter && report.recordDate !== dateFilter) return;
+        const data = Array.isArray(report.rawExcelData) ? report.rawExcelData : [];
+        data.forEach(row => {
+            const purchaseDiff = val(row, ['PurchaseDiff','Purchase Diff','purchase_diff','PurchaseDifference']);
+            if (purchaseDiff === '') return;
+            const dealer = val(row, ['Dealer Name','dealer name','Dealer','dealer','dealer name/remark','Dealer Name/Remark','Remark','remark']) || 'Unassigned';
+            const lapu = val(row, ['LAPU','Lapu','Lapu No','LAPU No','LAPU Number','LAPUNo','RetailerNo','Retailer No','retailerno','Mobile','mobile']) || '-';
+            const diff = num(purchaseDiff);
+            const purchase = calculatePurchase(diff);
+            if (purchase <= 0) return;
+            rows.push({ date: report.recordDate, dealer: String(dealer).trim(), lapu: String(lapu).trim(), diff, purchase });
+        });
+    });
+    return rows;
+}
+
+function money(v) { return '₹' + Number(v || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+
+function render(rows) {
+    const tbody = document.getElementById('purchaseTableBody');
+    if (!rows.length) {
+        tbody.innerHTML = '<tr><td colspan="6" class="text-center text-muted py-4">इस तारीख के लिए PurchaseDiff data नहीं मिला।</td></tr>';
+    } else {
+        tbody.innerHTML = rows.map((r,i) => `<tr><td>${i+1}</td><td><strong>${r.date}</strong></td><td>${escapeHtml(r.dealer)}</td><td>${escapeHtml(r.lapu)}</td><td>${money(r.diff)}</td><td class="text-success fw-bold">${money(r.purchase)}</td></tr>`).join('');
+    }
+    const total = rows.reduce((s,r) => s+r.purchase, 0);
+    const dealers = new Set(rows.map(r => r.dealer));
+    document.getElementById('dealerCount').innerText = dealers.size;
+    document.getElementById('totalPurchase').innerText = money(total);
+    document.getElementById('summaryDate').innerText = selectedDate || 'All Dates';
+}
+
+function escapeHtml(v) { return String(v).replace(/[&<>'"]/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;',"'":'&#39;','\"':'&quot;'}[c])); }
+function generateReport() { selectedDate = document.getElementById('reportDate').value || null; render(buildRows(selectedDate)); }
+function showAllDates() { selectedDate = null; document.getElementById('reportDate').value = ''; render(buildRows(null)); }
+
+async function loadReports() {
+    try {
+        const res = await fetch('/api/excel/reports', { credentials:'same-origin' });
+        const result = await res.json();
+        if (!result.success) throw new Error(result.error || 'Failed to load reports');
+        allReports = result.reports || [];
+        render(buildRows(null));
+    } catch (err) {
+        document.getElementById('purchaseTableBody').innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${escapeHtml(err.message)}</td></tr>`;
+    }
+}
+
+document.addEventListener('DOMContentLoaded', loadReports);
+</script>
+</body>
+</html>
