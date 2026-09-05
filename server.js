@@ -1,3 +1,4 @@
+require('dotenv').config();
 const express = require('express');
 const session = require('express-session');
 const multer = require('multer');
@@ -13,8 +14,8 @@ app.set('trust proxy', 1);
 app.set('view engine', 'ejs');
 app.set('views', path.join(__dirname, 'views'));
 
-const MONGO_URI = process.env.MONGODB_URI;
-if (!MONGO_URI) console.error('❌ MONGODB_URI environment variable is not set.');
+const MONGO_URI = process.env.MONGODB_URI || process.env.MONGO_URI;
+if (!MONGO_URI) console.error('❌ MONGODB_URI/MONGO_URI environment variable is not set.');
 else mongoose.connect(MONGO_URI).then(() => console.log('✅ Connected to MongoDB Atlas Successfully!')).catch(err => console.error('❌ MongoDB Connection Error:', err));
 
 const dealerSchema = new mongoose.Schema({ dealerName:{type:String,required:true}, remarkKeyword:{type:String,required:true}, createdAt:{type:Date,default:Date.now} });
